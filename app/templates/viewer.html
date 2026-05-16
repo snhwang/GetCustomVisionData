@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Custom Vision Data Viewer</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+        }
+        .header {
+            background: #16213e;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #0f3460;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+        }
+        .header h1 {
+            font-size: 1.5rem;
+            color: #e94560;
+        }
+        .header select {
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            border: 1px solid #0f3460;
+            background: #1a1a2e;
+            color: #eee;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        .header .stats {
+            margin-left: auto;
+            color: #888;
+        }
+        .container {
+            display: flex;
+            height: calc(100vh - 60px);
+        }
+        .sidebar {
+            width: 300px;
+            background: #16213e;
+            border-right: 1px solid #0f3460;
+            display: flex;
+            flex-direction: column;
+        }
+        .sidebar-header {
+            padding: 1rem;
+            border-bottom: 1px solid #0f3460;
+        }
+        .sidebar-header input {
+            width: 100%;
+            padding: 0.5rem;
+            border-radius: 4px;
+            border: 1px solid #0f3460;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        .filter-tags {
+            padding: 0.5rem 1rem;
+            border-bottom: 1px solid #0f3460;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+        .filter-tag {
+            padding: 0.25rem 0.5rem;
+            background: #0f3460;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .filter-tag:hover {
+            background: #e94560;
+        }
+        .filter-tag.active {
+            background: #e94560;
+        }
+        .image-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.5rem;
+        }
+        .image-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-bottom: 0.25rem;
+        }
+        .image-item:hover {
+            background: #0f3460;
+        }
+        .image-item.active {
+            background: #e94560;
+        }
+        .image-item img {
+            width: 50px;
+            height: 50px;
+            object-fit: cover;
+            border-radius: 4px;
+        }
+        .image-item-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .image-item-name {
+            font-size: 0.8rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .image-item-tags {
+            font-size: 0.7rem;
+            color: #888;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .image-viewer {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+            position: relative;
+            overflow: hidden;
+        }
+        .image-container {
+            position: relative;
+            max-width: 100%;
+            max-height: 100%;
+        }
+        .image-container img {
+            max-width: 100%;
+            max-height: calc(100vh - 300px);
+            display: block;
+        }
+        .roi-overlay {
+            position: absolute;
+            border: 2px solid;
+            background: rgba(233, 69, 96, 0.2);
+            pointer-events: none;
+        }
+        .roi-label {
+            position: absolute;
+            top: -20px;
+            left: 0;
+            font-size: 0.7rem;
+            padding: 2px 4px;
+            border-radius: 2px;
+            white-space: nowrap;
+        }
+        .metadata-panel {
+            background: #16213e;
+            border-top: 1px solid #0f3460;
+            padding: 1rem;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .metadata-panel h3 {
+            color: #e94560;
+            margin-bottom: 0.5rem;
+            font-size: 1rem;
+        }
+        .metadata-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+        .metadata-section h4 {
+            color: #888;
+            font-size: 0.8rem;
+            margin-bottom: 0.25rem;
+            text-transform: uppercase;
+        }
+        .tag-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.25rem;
+        }
+        .tag {
+            padding: 0.25rem 0.5rem;
+            background: #0f3460;
+            border-radius: 4px;
+            font-size: 0.75rem;
+        }
+        .region-tag {
+            background: #e94560;
+        }
+        .navigation {
+            display: flex;
+            gap: 1rem;
+            padding: 1rem;
+            justify-content: center;
+            background: #16213e;
+            border-top: 1px solid #0f3460;
+        }
+        .nav-btn {
+            padding: 0.5rem 1.5rem;
+            background: #0f3460;
+            border: none;
+            border-radius: 4px;
+            color: #eee;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background 0.2s;
+        }
+        .nav-btn:hover {
+            background: #e94560;
+        }
+        .nav-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .no-project {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #888;
+            font-size: 1.2rem;
+        }
+        .loading {
+            color: #888;
+            text-align: center;
+            padding: 2rem;
+        }
+        /* Color palette for ROIs */
+        .roi-color-0 { border-color: #e94560; }
+        .roi-color-0 .roi-label { background: #e94560; }
+        .roi-color-1 { border-color: #00d9ff; }
+        .roi-color-1 .roi-label { background: #00d9ff; color: #000; }
+        .roi-color-2 { border-color: #00ff88; }
+        .roi-color-2 .roi-label { background: #00ff88; color: #000; }
+        .roi-color-3 { border-color: #ffaa00; }
+        .roi-color-3 .roi-label { background: #ffaa00; color: #000; }
+        .roi-color-4 { border-color: #ff00ff; }
+        .roi-color-4 .roi-label { background: #ff00ff; }
+        .roi-color-5 { border-color: #00ffff; }
+        .roi-color-5 .roi-label { background: #00ffff; color: #000; }
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #888;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+        .checkbox-label input {
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Custom Vision Viewer</h1>
+        <select id="projectSelect">
+            <option value="">Select a project...</option>
+        </select>
+        <label class="checkbox-label">
+            <input type="checkbox" id="showRois" checked>
+            Show ROIs
+        </label>
+        <div class="stats" id="stats"></div>
+    </div>
+
+    <div class="container">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <input type="text" id="searchInput" placeholder="Search by tag or filename...">
+            </div>
+            <div class="filter-tags" id="filterTags"></div>
+            <div class="image-list" id="imageList">
+                <div class="no-project">Select a project to begin</div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="image-viewer" id="imageViewer">
+                <div class="no-project">No image selected</div>
+            </div>
+            <div class="metadata-panel" id="metadataPanel" style="display: none;">
+                <h3>Image Details</h3>
+                <div class="metadata-grid" id="metadataGrid"></div>
+            </div>
+            <div class="navigation">
+                <button class="nav-btn" id="prevBtn" disabled>&larr; Previous</button>
+                <span id="imageCounter" style="color: #888; align-self: center;">0 / 0</span>
+                <button class="nav-btn" id="nextBtn" disabled>Next &rarr;</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '';
+        let projects = [];
+        let currentProject = null;
+        let images = [];
+        let filteredImages = [];
+        let currentIndex = 0;
+        let tags = [];
+        let activeTagFilter = null;
+
+        // DOM elements
+        const projectSelect = document.getElementById('projectSelect');
+        const searchInput = document.getElementById('searchInput');
+        const filterTags = document.getElementById('filterTags');
+        const imageList = document.getElementById('imageList');
+        const imageViewer = document.getElementById('imageViewer');
+        const metadataPanel = document.getElementById('metadataPanel');
+        const metadataGrid = document.getElementById('metadataGrid');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const imageCounter = document.getElementById('imageCounter');
+        const stats = document.getElementById('stats');
+        const showRoisCheckbox = document.getElementById('showRois');
+
+        // Fetch projects on load
+        async function loadProjects() {
+            try {
+                const response = await fetch(`${API_BASE}/projects`);
+                const data = await response.json();
+                projects = data.projects;
+
+                projectSelect.innerHTML = '<option value="">Select a project...</option>';
+                projects.forEach(p => {
+                    const option = document.createElement('option');
+                    option.value = p.name;
+                    option.textContent = `${p.name} (${p.image_count} images)`;
+                    projectSelect.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Failed to load projects:', error);
+            }
+        }
+
+        // Load project data
+        async function loadProject(projectName) {
+            if (!projectName) {
+                currentProject = null;
+                images = [];
+                filteredImages = [];
+                tags = [];
+                renderImageList();
+                renderFilterTags();
+                updateStats();
+                return;
+            }
+
+            imageList.innerHTML = '<div class="loading">Loading...</div>';
+
+            try {
+                // Fetch project details and images
+                const [projectRes, imagesRes] = await Promise.all([
+                    fetch(`${API_BASE}/projects/${encodeURIComponent(projectName)}`),
+                    fetch(`${API_BASE}/projects/${encodeURIComponent(projectName)}/images?limit=50000`)
+                ]);
+
+                if (!projectRes.ok) {
+                    const err = await projectRes.json();
+                    throw new Error(err.detail || JSON.stringify(err) || `Project fetch failed: ${projectRes.status}`);
+                }
+                if (!imagesRes.ok) {
+                    const err = await imagesRes.json();
+                    throw new Error(err.detail || JSON.stringify(err) || `Images fetch failed: ${imagesRes.status}`);
+                }
+
+                currentProject = await projectRes.json();
+                const imagesData = await imagesRes.json();
+                images = imagesData.images || [];
+                filteredImages = [...images];
+                tags = currentProject.tags || [];
+
+                renderFilterTags();
+                renderImageList();
+                updateStats();
+
+                if (filteredImages.length > 0) {
+                    selectImage(0);
+                }
+            } catch (error) {
+                console.error('Failed to load project:', error);
+                imageList.innerHTML = `<div class="loading">Failed to load project: ${error.message}</div>`;
+            }
+        }
+
+        // Render filter tags
+        function renderFilterTags() {
+            filterTags.innerHTML = '';
+
+            if (tags.length === 0) return;
+
+            // Add "All" option
+            const allTag = document.createElement('div');
+            allTag.className = `filter-tag ${activeTagFilter === null ? 'active' : ''}`;
+            allTag.textContent = `All (${images.length})`;
+            allTag.onclick = () => filterByTag(null);
+            filterTags.appendChild(allTag);
+
+            tags.forEach(tag => {
+                const tagEl = document.createElement('div');
+                tagEl.className = `filter-tag ${activeTagFilter === tag.name ? 'active' : ''}`;
+                tagEl.textContent = `${tag.name} (${tag.image_count})`;
+                tagEl.onclick = () => filterByTag(tag.name);
+                filterTags.appendChild(tagEl);
+            });
+        }
+
+        // Filter by tag
+        function filterByTag(tagName) {
+            activeTagFilter = tagName;
+            applyFilters();
+            renderFilterTags();
+        }
+
+        // Apply all filters
+        function applyFilters() {
+            const searchTerm = searchInput.value.toLowerCase();
+
+            filteredImages = images.filter(img => {
+                // Tag filter
+                if (activeTagFilter) {
+                    const imgTags = img.tags.map(t => t.tag_name);
+                    const imgRegionTags = img.regions.map(r => r.tag_name);
+                    if (!imgTags.includes(activeTagFilter) && !imgRegionTags.includes(activeTagFilter)) {
+                        return false;
+                    }
+                }
+
+                // Search filter
+                if (searchTerm) {
+                    const filename = (img.local_filename || img.id).toLowerCase();
+                    const tagNames = img.tags.map(t => t.tag_name.toLowerCase()).join(' ');
+                    const regionTags = img.regions.map(r => r.tag_name.toLowerCase()).join(' ');
+                    const searchable = `${filename} ${tagNames} ${regionTags}`;
+                    if (!searchable.includes(searchTerm)) {
+                        return false;
+                    }
+                }
+
+                return true;
+            });
+
+            renderImageList();
+            updateStats();
+
+            if (filteredImages.length > 0) {
+                selectImage(0);
+            } else {
+                imageViewer.innerHTML = '<div class="no-project">No images match the filter</div>';
+                metadataPanel.style.display = 'none';
+            }
+        }
+
+        // Render image list
+        function renderImageList() {
+            if (filteredImages.length === 0) {
+                imageList.innerHTML = '<div class="no-project">No images found</div>';
+                return;
+            }
+
+            imageList.innerHTML = '';
+            filteredImages.forEach((img, index) => {
+                const item = document.createElement('div');
+                item.className = `image-item ${index === currentIndex ? 'active' : ''}`;
+                item.onclick = () => selectImage(index);
+
+                const allTags = [
+                    ...img.tags.map(t => t.tag_name),
+                    ...img.regions.map(r => r.tag_name)
+                ];
+                const uniqueTags = [...new Set(allTags)];
+
+                item.innerHTML = `
+                    <img src="${API_BASE}/projects/${encodeURIComponent(currentProject.project.name)}/images/${img.id}/file"
+                         onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2250%22 height=%2250%22><rect fill=%22%23333%22 width=%2250%22 height=%2250%22/></svg>'">
+                    <div class="image-item-info">
+                        <div class="image-item-name">${img.local_filename || img.id}</div>
+                        <div class="image-item-tags">${uniqueTags.join(', ') || 'No tags'}</div>
+                    </div>
+                `;
+                imageList.appendChild(item);
+            });
+        }
+
+        // Select and display image
+        function selectImage(index) {
+            if (index < 0 || index >= filteredImages.length) return;
+
+            currentIndex = index;
+            const img = filteredImages[index];
+
+            // Update list selection
+            document.querySelectorAll('.image-item').forEach((el, i) => {
+                el.classList.toggle('active', i === index);
+            });
+
+            // Scroll active item into view
+            const activeItem = document.querySelector('.image-item.active');
+            if (activeItem) {
+                activeItem.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            }
+
+            // Display image with ROIs
+            const showRois = showRoisCheckbox.checked;
+            const imgUrl = `${API_BASE}/projects/${encodeURIComponent(currentProject.project.name)}/images/${img.id}/file`;
+
+            imageViewer.innerHTML = `
+                <div class="image-container" id="imageContainer">
+                    <img src="${imgUrl}" id="mainImage" onload="drawRois()">
+                </div>
+            `;
+
+            // Store current image data for ROI drawing
+            window.currentImageData = img;
+
+            // Display metadata
+            displayMetadata(img);
+
+            // Update navigation
+            updateNavigation();
+        }
+
+        // Draw ROI overlays
+        function drawRois() {
+            if (!showRoisCheckbox.checked) return;
+
+            const img = window.currentImageData;
+            if (!img || !img.regions || img.regions.length === 0) return;
+
+            const mainImage = document.getElementById('mainImage');
+            const container = document.getElementById('imageContainer');
+
+            if (!mainImage || !container) return;
+
+            const displayWidth = mainImage.offsetWidth;
+            const displayHeight = mainImage.offsetHeight;
+
+            // Get unique tags for color assignment
+            const uniqueTags = [...new Set(img.regions.map(r => r.tag_name))];
+
+            img.regions.forEach(region => {
+                const colorIndex = uniqueTags.indexOf(region.tag_name) % 6;
+
+                const roi = document.createElement('div');
+                roi.className = `roi-overlay roi-color-${colorIndex}`;
+                roi.style.left = `${region.left * displayWidth}px`;
+                roi.style.top = `${region.top * displayHeight}px`;
+                roi.style.width = `${region.width * displayWidth}px`;
+                roi.style.height = `${region.height * displayHeight}px`;
+
+                const label = document.createElement('div');
+                label.className = 'roi-label';
+                label.textContent = region.tag_name;
+                roi.appendChild(label);
+
+                container.appendChild(roi);
+            });
+        }
+
+        // Display metadata panel
+        function displayMetadata(img) {
+            metadataPanel.style.display = 'block';
+
+            const allTags = img.tags.map(t => `<span class="tag">${t.tag_name}</span>`).join('');
+            const regionTags = img.regions.map(r => `<span class="tag region-tag">${r.tag_name}</span>`).join('');
+
+            metadataGrid.innerHTML = `
+                <div class="metadata-section">
+                    <h4>File Info</h4>
+                    <div>${img.local_filename || 'N/A'}</div>
+                    <div>${img.width} × ${img.height} px</div>
+                </div>
+                <div class="metadata-section">
+                    <h4>Classification Tags</h4>
+                    <div class="tag-list">${allTags || '<span style="color:#666">None</span>'}</div>
+                </div>
+                <div class="metadata-section">
+                    <h4>Object Detection (${img.regions.length} regions)</h4>
+                    <div class="tag-list">${regionTags || '<span style="color:#666">None</span>'}</div>
+                </div>
+                <div class="metadata-section">
+                    <h4>Image ID</h4>
+                    <div style="font-size: 0.7rem; word-break: break-all;">${img.id}</div>
+                </div>
+            `;
+        }
+
+        // Update navigation buttons
+        function updateNavigation() {
+            prevBtn.disabled = currentIndex <= 0;
+            nextBtn.disabled = currentIndex >= filteredImages.length - 1;
+            imageCounter.textContent = `${currentIndex + 1} / ${filteredImages.length}`;
+        }
+
+        // Update stats
+        function updateStats() {
+            if (!currentProject) {
+                stats.textContent = '';
+                return;
+            }
+
+            const totalImages = images.length;
+            const withRegions = images.filter(i => i.regions.length > 0).length;
+            stats.textContent = `${filteredImages.length} of ${totalImages} images | ${withRegions} with ROIs | ${tags.length} tags`;
+        }
+
+        // Event listeners
+        projectSelect.addEventListener('change', (e) => loadProject(e.target.value));
+        searchInput.addEventListener('input', () => applyFilters());
+        prevBtn.addEventListener('click', () => selectImage(currentIndex - 1));
+        nextBtn.addEventListener('click', () => selectImage(currentIndex + 1));
+        showRoisCheckbox.addEventListener('change', () => {
+            if (filteredImages.length > 0) {
+                selectImage(currentIndex);
+            }
+        });
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT') return;
+
+            if (e.key === 'ArrowLeft' || e.key === 'a') {
+                selectImage(currentIndex - 1);
+            } else if (e.key === 'ArrowRight' || e.key === 'd') {
+                selectImage(currentIndex + 1);
+            }
+        });
+
+        // Redraw ROIs on window resize
+        window.addEventListener('resize', () => {
+            if (window.currentImageData) {
+                const container = document.getElementById('imageContainer');
+                if (container) {
+                    container.querySelectorAll('.roi-overlay').forEach(el => el.remove());
+                    drawRois();
+                }
+            }
+        });
+
+        // Initialize
+        loadProjects();
+    </script>
+</body>
+</html>

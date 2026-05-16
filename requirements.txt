@@ -2,3 +2,6 @@ azure-cognitiveservices-vision-customvision>=3.1.0
 requests>=2.28.0
 Pillow>=9.0.0
 tqdm>=4.64.0
+python-dotenv>=1.0.0
+uvicorn
+fastapi

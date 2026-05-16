@@ -1,8 +1,12 @@
 """Configuration for Custom Vision API access."""
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Load from environment variables for security
-ENDPOINT = os.environ.get("CUSTOM_VISION_ENDPOINT", "https://eastus.api.cognitive.microsoft.com/")
+ENDPOINT = os.environ.get("ENDPOINT", "https://eastus.api.cognitive.microsoft.com/")
 TRAINING_KEY = os.environ.get("CUSTOM_VISION_KEY", "")
 
 # Output directory for downloaded data

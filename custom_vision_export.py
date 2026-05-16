@@ -140,6 +140,45 @@ class CustomVisionExporter:
 
         return metadata
 
+    def load_existing_metadata(self, project_dir: Path) -> dict:
+        """Load existing metadata if available."""
+        metadata_file = project_dir / "metadata.json"
+        if metadata_file.exists():
+            try:
+                with open(metadata_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError):
+                pass
+        return None
+
+    def is_image_complete(self, existing_img: dict, new_img, images_dir: Path) -> bool:
+        """Check if an image's data is already complete (file + metadata)."""
+        if not existing_img:
+            return False
+
+        # Check if image file exists
+        local_filename = existing_img.get("local_filename")
+        if not local_filename:
+            return False
+
+        image_path = images_dir / local_filename
+        if not image_path.exists():
+            return False
+
+        # Check if tags match (compare tag IDs)
+        existing_tag_ids = set(t["tag_id"] for t in existing_img.get("tags", []))
+        new_tag_ids = set(str(t.tag_id) for t in (new_img.tags or []))
+        if existing_tag_ids != new_tag_ids:
+            return False
+
+        # Check if regions match (compare region count and tag IDs)
+        existing_region_tags = sorted(r["tag_id"] for r in existing_img.get("regions", []))
+        new_region_tags = sorted(str(r.tag_id) for r in (new_img.regions or []))
+        if existing_region_tags != new_region_tags:
+            return False
+
+        return True
+
     def export_project(self, project, download_images: bool = True) -> dict:
         """Export all data from a single project."""
         project_id = str(project.id)
@@ -151,6 +190,13 @@ class CustomVisionExporter:
         project_dir.mkdir(parents=True, exist_ok=True)
 
         print(f"\nExporting project: {project_name}")
+
+        # Load existing metadata if available
+        existing_data = self.load_existing_metadata(project_dir)
+        existing_images_by_id = {}
+        if existing_data:
+            existing_images_by_id = {img["id"]: img for img in existing_data.get("images", [])}
+            print(f"  Found existing metadata with {len(existing_images_by_id)} images")
 
         # Get project details
         project_details = self.get_project_details(project_id)
@@ -168,8 +214,26 @@ class CustomVisionExporter:
         images_dir = project_dir / "images"
         images_metadata = []
 
+        skipped_count = 0
+        downloaded_count = 0
+        metadata_updated_count = 0
+
         for image in tqdm(all_images, desc="  Processing images"):
+            image_id = str(image.id)
+            existing_img = existing_images_by_id.get(image_id)
+
+            # Check if this image is already complete
+            if existing_img and self.is_image_complete(existing_img, image, images_dir):
+                # Use existing metadata as-is
+                images_metadata.append(existing_img)
+                skipped_count += 1
+                continue
+
+            # Need to process this image (new or updated)
             metadata = self.export_image_metadata(image, tags_lookup)
+
+            if existing_img and existing_img.get("local_filename"):
+                metadata_updated_count += 1
 
             if download_images and image.original_image_uri:
                 # Determine file extension from URL or default to jpg
@@ -182,13 +246,24 @@ class CustomVisionExporter:
                 image_filename = f"{image.id}{ext}"
                 image_path = images_dir / image_filename
 
-                if self.download_image(image.original_image_uri, image_path):
+                # Skip download if image file already exists
+                if image_path.exists():
                     metadata["local_filename"] = image_filename
+                elif self.download_image(image.original_image_uri, image_path):
+                    metadata["local_filename"] = image_filename
+                    downloaded_count += 1
                 else:
                     metadata["local_filename"] = None
                     metadata["download_error"] = True
 
             images_metadata.append(metadata)
+
+        if skipped_count > 0:
+            print(f"  Skipped {skipped_count} already complete images")
+        if metadata_updated_count > 0:
+            print(f"  Updated metadata for {metadata_updated_count} images")
+        if downloaded_count > 0:
+            print(f"  Downloaded {downloaded_count} new images")
 
         # Compile export data
         export_data = {
@@ -253,17 +328,33 @@ class CustomVisionExporter:
             export_data = self.export_project(project, download_images)
             all_exports[project.name] = export_data
 
-        # Save summary
-        summary = {
-            "total_projects": len(projects),
-            "projects": [{
+        # Load existing summary to merge with
+        summary_file = self.output_dir / "export_summary.json"
+        existing_projects_by_id = {}
+        if summary_file.exists():
+            try:
+                with open(summary_file, 'r', encoding='utf-8') as f:
+                    existing_summary = json.load(f)
+                    existing_projects_by_id = {p["id"]: p for p in existing_summary.get("projects", [])}
+                    print(f"  Merging with existing summary ({len(existing_projects_by_id)} projects)")
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        # Update with new projects (add or replace)
+        for p in projects:
+            existing_projects_by_id[str(p.id)] = {
                 "name": p.name,
                 "id": str(p.id),
                 "image_count": all_exports[p.name]["summary"]["total_images"]
-            } for p in projects]
+            }
+
+        # Save merged summary
+        merged_projects = list(existing_projects_by_id.values())
+        summary = {
+            "total_projects": len(merged_projects),
+            "projects": merged_projects
         }
 
-        summary_file = self.output_dir / "export_summary.json"
         with open(summary_file, 'w', encoding='utf-8') as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
 
